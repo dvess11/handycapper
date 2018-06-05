@@ -1,0 +1,21 @@
+language: java
+sudo: false
+jdk: oraclejdk8
+notifications:
+  webhooks:
+    urls:
+      - https://webhook.atomist.com/atomist/travis/teams/A6QERQ0AD
+    on_success: always
+    on_failure: always
+    on_start: always
+    on_cancel: always
+    on_error: always
+addons:
+  sonarcloud:
+    organization: "robinhowlett-github"
+    token:
+      secure: "$SONAR_TOKEN"
+cache:
+  directories:
+    - '$HOME/.m2/repository'
+    - '$HOME/.sonar/cache'
