@@ -10,7 +10,7 @@ Includes:
 - a Java SDK for programmatic access to the chart data and/or database
 - an SQL editor to execute queries against the database
 
-> Version 1.0.1 released on May 24th 2018 to account for a long owner name at SA May 20th 2018 Race 3.
+[![Build Status](https://travis-ci.org/robinhowlett/handycapper.svg?branch=master)](https://travis-ci.org/robinhowlett/handycapper)
 
 ## TL;DR
 
