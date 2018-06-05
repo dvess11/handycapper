@@ -84,7 +84,7 @@ public class HandycapperApplication extends AbstractJavaFxApplicationSupport {
 
     @PostConstruct
     public Flyway setLocations() {
-        if (flywayLocations != null || !flywayLocations.isEmpty()) {
+        if (flywayLocations != null && !flywayLocations.isEmpty()) {
             flyway.setLocations(flywayLocations);
         }
         return flyway;

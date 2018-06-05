@@ -20,6 +20,7 @@ import com.robinhowlett.chartparser.charts.pdf.Rating;
 import com.robinhowlett.chartparser.charts.pdf.Scratch;
 import com.robinhowlett.chartparser.charts.pdf.Starter;
 import com.robinhowlett.chartparser.charts.pdf.WindSpeedDirection;
+import com.robinhowlett.chartparser.charts.pdf.running_line.LastRaced.UnknownTrackException;
 import com.robinhowlett.chartparser.charts.pdf.wagering.WagerPayoffPools;
 import com.robinhowlett.chartparser.charts.pdf.wagering.WagerPayoffPools.ExoticPayoffPool;
 import com.robinhowlett.chartparser.charts.pdf.wagering.WagerPayoffPools.WinPlaceShowPayoffPool;
@@ -41,6 +42,8 @@ import org.jooq.Record;
 import org.jooq.Result;
 import org.jooq.SelectJoinStep;
 import org.jooq.impl.DSL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +54,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.robinhowlett.handycapper.domain.tables.Races.RACES;
@@ -59,6 +63,7 @@ import static com.robinhowlett.handycapper.domain.tables.Starters.STARTERS;
 @Service
 @Transactional
 public class RaceService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RaceService.class);
 
     @Autowired
     private DSLContext dsl;
@@ -98,7 +103,14 @@ public class RaceService {
 
         if (raceRecords != null) {
             raceResults = raceRecords.stream()
-                    .map(this::getRaceResultEntity)
+                    .map(record -> {
+                        try {
+                            return getRaceResultEntity(record);
+                        } catch (UnknownTrackException e) {
+                            LOGGER.error(e.getMessage());
+                            return null;
+                        }
+                    })
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
         }
@@ -117,7 +129,14 @@ public class RaceService {
 
         if (raceRecords != null) {
             raceResults = raceRecords.stream()
-                    .map(this::getRaceResultEntity)
+                    .map(record -> {
+                        try {
+                            return getRaceResultEntity(record);
+                        } catch (UnknownTrackException e) {
+                            LOGGER.error(e.getMessage());
+                            return null;
+                        }
+                    })
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
         }
@@ -126,7 +145,7 @@ public class RaceService {
     }
 
     public RaceResult findByTrackAndDateAndNumber(String trackCode, LocalDate date, Integer
-            raceNumber) {
+            raceNumber) throws UnknownTrackException {
         Record raceRecord = dsl.select().
                 from(RACES)
                 .where(RACES.TRACK.eq(trackCode)
@@ -154,7 +173,14 @@ public class RaceService {
 
         if (raceRecords != null) {
             raceResults = raceRecords.stream()
-                    .map(this::getRaceResultEntity)
+                    .map(record -> {
+                        try {
+                            return getRaceResultEntity(record);
+                        } catch (UnknownTrackException e) {
+                            LOGGER.error(e.getMessage());
+                            return null;
+                        }
+                    })
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
         }
@@ -242,7 +268,14 @@ public class RaceService {
 
         if (raceRecords != null) {
             raceResults = raceRecords.stream()
-                    .map(this::getRaceResultEntity)
+                    .map(record -> {
+                        try {
+                            return getRaceResultEntity(record);
+                        } catch (UnknownTrackException e) {
+                            LOGGER.error(e.getMessage());
+                            return null;
+                        }
+                    })
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
         }
@@ -250,7 +283,7 @@ public class RaceService {
         return raceResults;
     }
 
-    public RaceResult getRaceResultEntity(Record raceRecord) {
+    public RaceResult getRaceResultEntity(Record raceRecord) throws UnknownTrackException {
         Integer raceId = raceRecord.get(RACES.ID, Integer.class);
 
         // starters
@@ -334,8 +367,14 @@ public class RaceService {
         Date date = raceRecord.getValue(RACES.DATE, Date.class);
 
         // track
+        Track track;
         String trackCode = raceRecord.getValue(RACES.TRACK, String.class);
-        Track track = trackService.getTrack(trackCode).get();
+        Optional<Track> trackOptional = trackService.getTrack(trackCode);
+        if (trackOptional.isPresent()) {
+            track = trackOptional.get();
+        } else {
+            throw new UnknownTrackException(trackCode);
+        }
 
         // race number
         Integer raceNumber = raceRecord.getValue(RACES.NUMBER, Integer.class);

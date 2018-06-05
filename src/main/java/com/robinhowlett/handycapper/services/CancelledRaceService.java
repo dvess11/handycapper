@@ -2,6 +2,7 @@ package com.robinhowlett.handycapper.services;
 
 import com.robinhowlett.chartparser.charts.pdf.Cancellation;
 import com.robinhowlett.chartparser.charts.pdf.RaceResult;
+import com.robinhowlett.chartparser.charts.pdf.running_line.LastRaced.UnknownTrackException;
 import com.robinhowlett.chartparser.tracks.Track;
 import com.robinhowlett.chartparser.tracks.TrackService;
 import com.robinhowlett.handycapper.domain.tables.records.CancelledRecord;
@@ -11,6 +12,8 @@ import org.jooq.InsertSetMoreStep;
 import org.jooq.InsertSetStep;
 import org.jooq.Record;
 import org.jooq.Result;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +23,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.robinhowlett.handycapper.domain.tables.Cancelled.CANCELLED;
@@ -27,6 +31,7 @@ import static com.robinhowlett.handycapper.domain.tables.Cancelled.CANCELLED;
 @Service
 @Transactional
 public class CancelledRaceService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CancelledRaceService.class);
 
     @Autowired
     private DSLContext dsl;
@@ -46,16 +51,24 @@ public class CancelledRaceService {
 
         if (cancelledRaceRecords != null) {
             cancelledRaces = cancelledRaceRecords.stream()
-                    .map(this::getCancelledRaceEntity)
+                    .map(record -> {
+                        try {
+                            return getCancelledRaceEntity(record);
+                        } catch (UnknownTrackException e) {
+                            LOGGER.error(e.getMessage());
+                            return null;
+                        }
+                    })
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
+
         }
 
         return cancelledRaces;
     }
 
     public RaceResult findByTrackAndDateAndNumber(String trackCode, LocalDate date,
-            Integer raceNumber) {
+            Integer raceNumber) throws UnknownTrackException {
         Record cancelledRaceRecord = dsl.select().
                 from(CANCELLED)
                 .where(CANCELLED.TRACK.eq(trackCode).and(
@@ -73,13 +86,20 @@ public class CancelledRaceService {
         return null;
     }
 
-    private RaceResult getCancelledRaceEntity(Record cancelledRaceRecord) {
+    private RaceResult getCancelledRaceEntity(Record cancelledRaceRecord) throws
+            UnknownTrackException {
         // race date
         Date date = cancelledRaceRecord.getValue(CANCELLED.DATE, Date.class);
 
         // track
+        Track track;
         String trackCode = cancelledRaceRecord.getValue(CANCELLED.TRACK, String.class);
-        Track track = trackService.getTrack(trackCode).get();
+        Optional<Track> trackOptional = trackService.getTrack(trackCode);
+        if (trackOptional.isPresent()) {
+            track = trackOptional.get();
+        } else {
+            throw new UnknownTrackException(trackCode);
+        }
 
         // race number
         Integer raceNumber = cancelledRaceRecord.getValue(CANCELLED.NUMBER, Integer.class);

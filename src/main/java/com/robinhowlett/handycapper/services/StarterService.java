@@ -12,6 +12,7 @@ import com.robinhowlett.chartparser.charts.pdf.Starter.Claim;
 import com.robinhowlett.chartparser.charts.pdf.Trainer;
 import com.robinhowlett.chartparser.charts.pdf.running_line.LastRaced;
 import com.robinhowlett.chartparser.charts.pdf.running_line.LastRaced.LastRacePerformance;
+import com.robinhowlett.chartparser.charts.pdf.running_line.LastRaced.UnknownTrackException;
 import com.robinhowlett.chartparser.charts.pdf.running_line.MedicationEquipment;
 import com.robinhowlett.chartparser.charts.pdf.running_line.MedicationEquipment.Equipment;
 import com.robinhowlett.chartparser.charts.pdf.running_line.MedicationEquipment.Medication;
@@ -40,6 +41,8 @@ import org.jooq.Record;
 import org.jooq.Record9;
 import org.jooq.Result;
 import org.jooq.impl.DSL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +51,7 @@ import java.sql.Date;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static com.robinhowlett.chartparser.fractionals.FractionalPoint.Fractional;
@@ -58,7 +62,6 @@ import static com.robinhowlett.handycapper.domain.tables.Starters.STARTERS;
 @Service
 @Transactional
 public class StarterService {
-
     @Autowired
     private DSLContext dsl;
 
@@ -96,7 +99,7 @@ public class StarterService {
                 .fetch();
     }
 
-    public Starter getStarterEntity(Record starterRecord) {
+    public Starter getStarterEntity(Record starterRecord) throws UnknownTrackException {
         Integer starterId = starterRecord.getValue(STARTERS.ID, Integer.class);
 
         // pointsOfCall
@@ -151,8 +154,18 @@ public class StarterService {
                     starterRecord.getValue(STARTERS.LAST_RACED_DAYS_SINCE, Integer.class);
             Integer lastRacedNumber =
                     starterRecord.getValue(STARTERS.LAST_RACED_NUMBER, Integer.class);
-            String lastRacedTrack = starterRecord.getValue(STARTERS.LAST_RACED_TRACK, String.class);
-            Track track = trackService.getTrack(lastRacedTrack).get();
+
+            // last raced track
+            String lastRacedTrackCode = starterRecord.getValue(STARTERS.LAST_RACED_TRACK, String
+                    .class);
+            Track track;
+            Optional<Track> trackOptional = trackService.getTrack(lastRacedTrackCode);
+            if (trackOptional.isPresent()) {
+                track = trackOptional.get();
+            } else {
+                throw new UnknownTrackException(lastRacedTrackCode);
+            }
+
             Integer lastRacedPosition = starterRecord.getValue(STARTERS.LAST_RACED_POSITION,
                     Integer.class);
             LastRacePerformance lastRacePerformance = new LastRacePerformance(lastRacedNumber,
@@ -442,11 +455,12 @@ public class StarterService {
                 // last raced race number
                 moreStep = moreStep.set(STARTERS.LAST_RACED_NUMBER,
                         lastRacePerformance.getRaceNumber());
+
+                // last raced official finishing position
+                moreStep = moreStep.set(STARTERS.LAST_RACED_POSITION,
+                        lastRacePerformance.getOfficialPosition());
             }
 
-            // last raced official finishing position
-            moreStep = moreStep.set(STARTERS.LAST_RACED_POSITION,
-                    lastRacePerformance.getOfficialPosition());
         }
         return moreStep;
     }

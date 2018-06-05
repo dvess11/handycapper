@@ -2,6 +2,7 @@ package com.robinhowlett.handycapper.controllers;
 
 import com.robinhowlett.chartparser.charts.pdf.Horse;
 import com.robinhowlett.chartparser.charts.pdf.RaceResult;
+import com.robinhowlett.chartparser.charts.pdf.running_line.LastRaced.UnknownTrackException;
 import com.robinhowlett.chartparser.tracks.Track;
 import com.robinhowlett.chartparser.tracks.TrackService;
 import com.robinhowlett.handycapper.components.AgeSlider;
@@ -13,6 +14,8 @@ import com.robinhowlett.handycapper.services.CancelledRaceService;
 import com.robinhowlett.handycapper.services.RaceService;
 import com.robinhowlett.handycapper.services.StarterService;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,13 +33,12 @@ import static org.springframework.format.annotation.DateTimeFormat.ISO.DATE;
 
 @RestController
 public class APIController {
+    private static final Logger LOGGER = LoggerFactory.getLogger(APIController.class);
 
     @Autowired
     private RaceService raceService;
-
     @Autowired
     private CancelledRaceService cancelledRaceService;
-
     @Autowired
     private StarterService starterService;
     @Autowired
@@ -53,16 +55,20 @@ public class APIController {
         List<RaceResult> raceResults = new ArrayList<>();
 
         if (raceNumber != null) {
-            RaceResult raceResult =
-                    raceService.findByTrackAndDateAndNumber(trackCode, date, raceNumber);
-            if (raceResult != null) {
-                raceResults.add(raceResult);
-            } else if (Boolean.TRUE.equals(includeCancelled)) {
-                raceResult = cancelledRaceService.findByTrackAndDateAndNumber(trackCode, date,
-                        raceNumber);
+            try {
+                RaceResult raceResult =
+                        raceService.findByTrackAndDateAndNumber(trackCode, date, raceNumber);
                 if (raceResult != null) {
                     raceResults.add(raceResult);
+                } else if (Boolean.TRUE.equals(includeCancelled)) {
+                    raceResult = cancelledRaceService.findByTrackAndDateAndNumber(trackCode, date,
+                            raceNumber);
+                    if (raceResult != null) {
+                        raceResults.add(raceResult);
+                    }
                 }
+            } catch (UnknownTrackException e) {
+                LOGGER.error(e.getMessage());
             }
         } else {
             raceResults = raceService.findByTrackAndDate(trackCode, date);

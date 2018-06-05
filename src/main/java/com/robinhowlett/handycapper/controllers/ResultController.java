@@ -4,6 +4,7 @@ import com.robinhowlett.chartparser.charts.pdf.DistanceSurfaceTrackRecord;
 import com.robinhowlett.chartparser.charts.pdf.RaceResult;
 import com.robinhowlett.chartparser.charts.pdf.Starter;
 import com.robinhowlett.chartparser.charts.pdf.running_line.LastRaced;
+import com.robinhowlett.chartparser.charts.pdf.running_line.LastRaced.UnknownTrackException;
 import com.robinhowlett.chartparser.charts.pdf.wagering.WagerPayoffPools;
 import com.robinhowlett.chartparser.charts.pdf.wagering.WagerPayoffPools.ExoticPayoffPool;
 import com.robinhowlett.chartparser.charts.pdf.wagering.WagerPayoffPools.WinPlaceShowPayoffPool;
@@ -72,7 +73,6 @@ import static com.robinhowlett.chartparser.ChartParser.ordinal;
 
 @FXMLController
 public class ResultController implements Initializable {
-
     private static final Logger LOGGER = LoggerFactory.getLogger(ResultController.class);
     private static final String CENTER_ALIGNED = "-fx-alignment: CENTER";
     private static final String ALIGNED_RIGHT = "-fx-alignment: CENTER-RIGHT";
@@ -386,10 +386,14 @@ public class ResultController implements Initializable {
         exoticsTable.getItems().clear();
         exoticsTable.refresh();
 
-        raceResult = raceService.findByTrackAndDateAndNumber(
-                summary.getTrackCode(),
-                LocalDate.parse(summary.getRaceDate(), DateTimeFormatter.ISO_LOCAL_DATE),
-                summary.getRaceNumber());
+        try {
+            raceResult = raceService.findByTrackAndDateAndNumber(
+                    summary.getTrackCode(),
+                    LocalDate.parse(summary.getRaceDate(), DateTimeFormatter.ISO_LOCAL_DATE),
+                    summary.getRaceNumber());
+        } catch (UnknownTrackException e) {
+            LOGGER.error(e.getMessage());
+        }
 
         refreshUserInterface(raceResult);
     }
@@ -586,9 +590,10 @@ public class ResultController implements Initializable {
         File file = fileChooser.showSaveDialog(excelBtn.getScene().getWindow());
 
         if (file != null) {
-            XSSFWorkbook workbook = excelService.create(Arrays.asList(raceResult));
-            try (FileOutputStream outputStream = new FileOutputStream(file)) {
-                workbook.write(outputStream);
+            try (XSSFWorkbook workbook = excelService.create(Arrays.asList(raceResult))) {
+                try (FileOutputStream outputStream = new FileOutputStream(file)) {
+                    workbook.write(outputStream);
+                }
             }
             Desktop.getDesktop().open(file);
         }

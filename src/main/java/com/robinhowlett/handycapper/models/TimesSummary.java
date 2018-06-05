@@ -32,7 +32,7 @@ public class TimesSummary {
                 // calculate miles per hour from feet per millisecond
                 // ((feet / (ms / 1000)) / 5280) * 3600
                 double mph =
-                        ((double) (fractional.getFeet() / (fractional.getMillis() / 1000)) // fps
+                        (fractional.getFeet() / (fractional.getMillis() / (double) 1000) // fps
                                 / 5280) // mile
                                 * 3600; // hour
 

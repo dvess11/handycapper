@@ -3,6 +3,7 @@ package com.robinhowlett.handycapper.controllers;
 import com.robinhowlett.chartparser.ChartParser;
 import com.robinhowlett.chartparser.charts.pdf.RaceResult;
 import com.robinhowlett.chartparser.charts.pdf.RaceTypeNameBlackTypeBreed;
+import com.robinhowlett.chartparser.charts.pdf.running_line.LastRaced.UnknownTrackException;
 import com.robinhowlett.chartparser.tracks.Track;
 import com.robinhowlett.chartparser.tracks.TrackService;
 import com.robinhowlett.handycapper.HandycapperApplication;
@@ -77,7 +78,6 @@ import static de.felixroske.jfxsupport.GUIState.getStage;
 
 @FXMLController
 public class DashboardController implements Initializable {
-
     private static final Logger LOGGER = LoggerFactory.getLogger(DashboardController.class);
     private static final Pattern TRACK_CODE_PATTERN = Pattern.compile("([A-Z]+) - .*");
 
@@ -431,18 +431,26 @@ public class DashboardController implements Initializable {
 
             if (selectedItems != null) {
                 List<RaceResult> raceResults = selectedItems.stream()
-                        .map(raceSummary -> raceService.findByTrackAndDateAndNumber(
-                                raceSummary.getTrackCode(),
-                                LocalDate.parse(raceSummary.getRaceDate(),
-                                        DateTimeFormatter.ISO_LOCAL_DATE),
-                                raceSummary.getRaceNumber()))
+                        .map(raceSummary -> {
+                            try {
+                                return raceService.findByTrackAndDateAndNumber(
+                                        raceSummary.getTrackCode(),
+                                        LocalDate.parse(raceSummary.getRaceDate(),
+                                                DateTimeFormatter.ISO_LOCAL_DATE),
+                                        raceSummary.getRaceNumber());
+                            } catch (UnknownTrackException e) {
+                                LOGGER.error(e.getMessage());
+                                return null;
+                            }
+                        })
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList());
 
                 if (!raceResults.isEmpty()) {
-                    XSSFWorkbook workbook = excelService.create(raceResults);
-                    try (FileOutputStream outputStream = new FileOutputStream(file)) {
-                        workbook.write(outputStream);
+                    try (XSSFWorkbook workbook = excelService.create(raceResults)) {
+                        try (FileOutputStream outputStream = new FileOutputStream(file)) {
+                            workbook.write(outputStream);
+                        }
                     }
                     Desktop.getDesktop().open(file);
                 }
@@ -517,8 +525,16 @@ public class DashboardController implements Initializable {
                 }
             }
             if (raceRecord != null) {
-                RaceResult result = raceService.getRaceResultEntity(raceRecord);
-                persistedRaces.add(result);
+                RaceResult result = null;
+                try {
+                    result = raceService.getRaceResultEntity(raceRecord);
+                } catch (UnknownTrackException e) {
+                    LOGGER.error(e.getMessage());
+                }
+
+                if (result != null) {
+                    persistedRaces.add(result);
+                }
             }
         }
         return persistedRaces;
