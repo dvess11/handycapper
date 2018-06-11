@@ -117,8 +117,8 @@ public class DashboardController implements Initializable {
     private HostServicesDelegate hostServices;
     @Autowired
     private ResultView resultView;
-    @Value("${version.number}")
-    private String versionNumber;
+    @Value("${current.version}")
+    private String currentVersion;
 
     // Main
     @FXML
@@ -220,17 +220,18 @@ public class DashboardController implements Initializable {
                     new ParameterizedTypeReference<Map<String, Object>>() {
                     });
             if (response != null && response.getBody() != null) {
-                LOGGER.debug("Current version: " + versionNumber);
+                LOGGER.info("Current version: " + currentVersion);
                 String latestVersion = (String) response.getBody().get("tag_name");
-                LOGGER.debug("Latest version: " + latestVersion);
+                LOGGER.info("Latest version: " + latestVersion);
 
-                if (latestVersion != null && !latestVersion.equals(versionNumber) &&
-                        !latestVersion.endsWith("-SNAPSHOT")) {
+                if (latestVersion != null && !latestVersion.equals(currentVersion) &&
+                        !currentVersion.endsWith("-SNAPSHOT")) {
                     Alert popUp = new Alert(WARNING);
                     popUp.setTitle("A newer version is available!");
-                    popUp.setHeaderText("Detected version: " + versionNumber);
-                    popUp.setContentText("Version " + latestVersion + " is available to download." +
-                            " Select OK to open the downloads page.");
+                    popUp.setHeaderText("Version " + latestVersion + " is available to download.");
+                    popUp.setContentText("The current version is " + currentVersion + ". Select " +
+                            "OK to open the page to download the latest version (" +
+                            latestVersion + ").");
                     Optional<ButtonType> result = popUp.showAndWait();
                     if (result.get() == ButtonType.OK) {
                         hostServices.showDocument(
