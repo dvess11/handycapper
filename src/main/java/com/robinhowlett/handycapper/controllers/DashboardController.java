@@ -26,7 +26,13 @@ import org.controlsfx.control.SegmentedButton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
 
 import java.awt.*;
 import java.io.File;
@@ -34,10 +40,11 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.ResourceBundle;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -45,6 +52,7 @@ import java.util.stream.Collectors;
 
 import de.felixroske.jfxsupport.FXMLController;
 
+import javafx.beans.binding.Bindings;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.event.Event;
@@ -52,14 +60,19 @@ import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Hyperlink;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.cell.PropertyValueFactory;
@@ -74,7 +87,10 @@ import javafx.stage.Stage;
 import javafx.util.Callback;
 import javafx.util.StringConverter;
 
+import static java.time.format.DateTimeFormatter.ISO_LOCAL_DATE;
+
 import static de.felixroske.jfxsupport.GUIState.getStage;
+import static javafx.scene.control.Alert.AlertType.WARNING;
 
 @FXMLController
 public class DashboardController implements Initializable {
@@ -82,6 +98,7 @@ public class DashboardController implements Initializable {
     private static final Pattern TRACK_CODE_PATTERN = Pattern.compile("([A-Z]+) - .*");
 
     private List<RaceSummary> raceSummaries = new ArrayList<>();
+
     @Autowired
     private RaceService raceService;
     @Autowired
@@ -91,11 +108,18 @@ public class DashboardController implements Initializable {
     @Autowired
     private ChartParser chartParser;
     @Autowired
+    private RestTemplate restTemplate;
+
+
+    @Autowired
     private FileChooser fileChooser;
     @Autowired
     private HostServicesDelegate hostServices;
     @Autowired
     private ResultView resultView;
+    @Value("${version.number}")
+    private String versionNumber;
+
     // Main
     @FXML
     private Hyperlink subscribeLink;
@@ -187,6 +211,37 @@ public class DashboardController implements Initializable {
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
+        // check for updates
+        try {
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                    "https://api.github.com/repos/robinhowlett/handycapper/releases/latest",
+                    HttpMethod.GET,
+                    null,
+                    new ParameterizedTypeReference<Map<String, Object>>() {
+                    });
+            if (response != null && response.getBody() != null) {
+                LOGGER.debug("Current version: " + versionNumber);
+                String latestVersion = (String) response.getBody().get("tag_name");
+                LOGGER.debug("Latest version: " + latestVersion);
+
+                if (latestVersion != null && !latestVersion.equals(versionNumber) &&
+                        !latestVersion.endsWith("-SNAPSHOT")) {
+                    Alert popUp = new Alert(WARNING);
+                    popUp.setTitle("A newer version is available!");
+                    popUp.setHeaderText("Detected version: " + versionNumber);
+                    popUp.setContentText("Version " + latestVersion + " is available to download." +
+                            " Select OK to open the downloads page.");
+                    Optional<ButtonType> result = popUp.showAndWait();
+                    if (result.get() == ButtonType.OK) {
+                        hostServices.showDocument(
+                                "https://github.com/robinhowlett/handycapper/releases/latest");
+                    }
+                }
+            }
+        } catch (RestClientException e) {
+            LOGGER.warn("Unable to check for a newer version", e);
+        }
+
         subscribeLink.setOnAction(event ->
                 hostServices.showDocument("https://mailchi.mp/aba2a859dd29/subscribe-for-updates"));
 
@@ -255,6 +310,33 @@ public class DashboardController implements Initializable {
 
                 newStage.showAndWait();
             }
+        });
+
+        // right-click to open a pop-up menu with a Delete option; selected races are deleted from
+        // the database and removed from the table
+        racesTable.setRowFactory(tableView -> {
+            final TableRow<RaceSummary> row = new TableRow<>();
+            final ContextMenu contextMenu = new ContextMenu();
+            final MenuItem removeMenuItem = new MenuItem("Delete selected race(s)");
+            removeMenuItem.setOnAction(event -> {
+                ObservableList<RaceSummary> selectedItems =
+                        racesTable.getSelectionModel().getSelectedItems();
+                selectedItems.forEach(raceSummary ->
+                        raceService.deleteRace(
+                                raceSummary.getTrackCode(),
+                                LocalDate.parse(raceSummary.getRaceDate(), ISO_LOCAL_DATE),
+                                raceSummary.getRaceNumber()));
+                racesTable.getItems().removeAll(selectedItems);
+                racesTable.getSelectionModel().clearSelection();
+            });
+            contextMenu.getItems().add(removeMenuItem);
+            // Set context menu on row, but use a binding to make it only show for non-empty rows:
+            row.contextMenuProperty().bind(
+                    Bindings.when(row.emptyProperty())
+                            .then((ContextMenu) null)
+                            .otherwise(contextMenu)
+            );
+            return row;
         });
 
         // find charts: track picker combo box
@@ -369,6 +451,33 @@ public class DashboardController implements Initializable {
                 HandycapperApplication.showView(ResultView.class, Modality.NONE);
             }
         });
+
+        // right-click to open a pop-up menu with a Delete option; selected races are deleted from
+        // the database and removed from the table
+        queryTable.setRowFactory(tableView -> {
+            final TableRow<QuerySummary> row = new TableRow<>();
+            final ContextMenu contextMenu = new ContextMenu();
+            final MenuItem removeMenuItem = new MenuItem("Delete selected race(s)");
+            removeMenuItem.setOnAction(event -> {
+                ObservableList<QuerySummary> selectedItems =
+                        queryTable.getSelectionModel().getSelectedItems();
+                selectedItems.forEach(raceSummary ->
+                        raceService.deleteRace(
+                                raceSummary.getTrackCode(),
+                                LocalDate.parse(raceSummary.getRaceDate(), ISO_LOCAL_DATE),
+                                raceSummary.getRaceNumber()));
+                queryTable.getItems().removeAll(selectedItems);
+                queryTable.getSelectionModel().clearSelection();
+            });
+            contextMenu.getItems().add(removeMenuItem);
+            // Set context menu on row, but use a binding to make it only show for non-empty rows:
+            row.contextMenuProperty().bind(
+                    Bindings.when(row.emptyProperty())
+                            .then((ContextMenu) null)
+                            .otherwise(contextMenu)
+            );
+            return row;
+        });
     }
 
     private void refreshTable() {
@@ -436,7 +545,7 @@ public class DashboardController implements Initializable {
                                 return raceService.findByTrackAndDateAndNumber(
                                         raceSummary.getTrackCode(),
                                         LocalDate.parse(raceSummary.getRaceDate(),
-                                                DateTimeFormatter.ISO_LOCAL_DATE),
+                                                ISO_LOCAL_DATE),
                                         raceSummary.getRaceNumber());
                             } catch (UnknownTrackException e) {
                                 LOGGER.error(e.getMessage());
